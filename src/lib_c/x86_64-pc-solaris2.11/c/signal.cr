@@ -1,0 +1,52 @@
+require "./sys/types"
+require "./time"
+
+lib LibC
+    SIGHUP = 1
+    SIGINT = 2
+    SIGQUIT = 3
+    SIGILL = 4
+    SIGTRAP = 5
+    SIGIOT = 6
+    SIGABRT = 6
+    SIGEMT = 7
+    SIGFPE = 8
+    SIGKILL = 9
+    SIGBUS = 10
+    SIGSEGV = 11
+    SIGSYS = 12
+    SIGPIPE = 13
+    SIGALRM = 14
+    SIGTERM = 15
+    SIGUSR1 = 16
+    SIGUSR2 = 17
+    SIGCLD = 18
+    SIGCHLD = 18
+    SIGPWR = 19
+    SIGWINCH = 20
+    SIGURG = 21
+    SIGPOLL = 22
+    SIGIO = LibC::SIGPOLL
+    SIGSTOP = 23
+    SIGTSTP = 24
+    SIGCONT = 25
+    SIGTTIN = 26
+    SIGTTOU = 27
+    SIGVTALRM = 28
+    SIGPROF = 29
+    SIGXCPU = 30
+    SIGXFSZ = 31
+    SIGWAITING = 32
+    SIGLWP = 33
+    SIGFREEZE = 34
+    SIGTHAW = 35
+    SIGCANCEL = 36
+    SIGLOST = 37
+    SIGXRES = 38
+    SIGJVM1 = 39
+    SIGJVM2 = 40
+    SIGINFO = 41
+
+  fun kill(x0 : PidT, x1 : Int) : Int
+  fun signal(x0 : Int, x1 : Int -> Void) : Int -> Void
+end

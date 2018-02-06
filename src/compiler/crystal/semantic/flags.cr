@@ -30,7 +30,8 @@ class Crystal::Program
     set.add "darwin" if set.any?(&.starts_with?("macosx")) || set.any?(&.starts_with?("darwin"))
     set.add "freebsd" if set.any?(&.starts_with?("freebsd"))
     set.add "openbsd" if set.any?(&.starts_with?("openbsd"))
-    set.add "unix" if set.any? { |flag| %w(cygnus darwin freebsd linux openbsd).includes?(flag) }
+    set.add "solaris" if set.any?(&.starts_with?("solaris"))
+    set.add "unix" if set.any? { |flag| %w(cygnus darwin freebsd linux openbsd solaris).includes?(flag) }
     set.add "win32" if set.any?(&.starts_with?("windows")) && set.any? { |flag| %w(gnu msvc).includes?(flag) }
 
     set.add "x86_64" if set.any?(&.starts_with?("amd64"))
