@@ -11,6 +11,8 @@ lib LibC
     {% end %}
   {% elsif flag?(:darwin) || flag?(:freebsd) %}
     fun __error : Int*
+  {% elsif flag?(:solaris) %}
+    fun __error = __errno : Int*
   {% elsif flag?(:openbsd) %}
     fun __error = __errno : Int*
   {% elsif flag?(:win32) %}
@@ -222,12 +224,14 @@ class Errno < Exception
 
   # Returns the value of libc's errno.
   def self.value : LibC::Int
-    {% if flag?(:linux) %}
+    {% if flag?(:linux) %} 
       {% if flag?(:musl) %}
         LibC.__errno_location.value
       {% else %}
         LibC.errno
       {% end %}
+    {% elsif flag?(:solaris) %}
+       LibC.errno
     {% elsif flag?(:darwin) || flag?(:freebsd) || flag?(:openbsd) %}
       LibC.__error.value
     {% elsif flag?(:win32) %}

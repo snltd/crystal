@@ -4,6 +4,7 @@ require "../stdint"
 lib LibC
   alias BlkcntT = Long
   alias BlksizeT = Int
+  alias CAddrT = Char
   alias ClockT = Long
   alias ClockidT = Int
   alias DevT = ULong
@@ -15,6 +16,7 @@ lib LibC
   alias OffT = Long
   alias PidT = Int
   alias PthreadT = UInt
+  alias SockAddrT = Int16T
   alias SSizeT = Long
   alias SusecondsT = Long
   alias TimeT = Long

@@ -21,10 +21,9 @@ lib LibC
 
   struct Flock
     l_type : Int16T
-    l_start : Off32T
-    l_len : Off32T
-    l_pid : Pid32T
-    l_type : Short
+    l_start : OffT
+    l_len : OffT
+    l_pid : PidT
     l_whence : Int16T
     l_sysid : Int32T
   end

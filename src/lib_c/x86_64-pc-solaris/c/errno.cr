@@ -1,4 +1,6 @@
 lib LibC
+  fun errno() : Int
+
     EPERM = 1
     ENOENT = 2
     ESRCH = 3
