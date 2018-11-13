@@ -36,7 +36,7 @@ module Crystal
                elsif triple.any?(&.includes?("openbsd"))
                  {triple[0], triple[1], "openbsd"}.join('-')
                elsif triple.any?(&.includes?("solaris2.11"))
-                 {triple[0], triple[1], "solaris"}.join('-')
+                 {triple[0], triple[1], "solaris2.11"}.join('-')
                else
                  triple.join('-')
                end
