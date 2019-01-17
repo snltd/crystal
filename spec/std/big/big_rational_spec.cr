@@ -60,16 +60,34 @@ describe BigRational do
     r.to_f64.should be_close(f, 0.001)
   end
 
+  it "#to_f64!" do
+    r = br(10, 3)
+    f = 10.to_f64 / 3.to_f64
+    r.to_f64!.should be_close(f, 0.001)
+  end
+
   it "#to_f" do
     r = br(10, 3)
     f = 10.to_f64 / 3.to_f64
     r.to_f.should be_close(f, 0.001)
   end
 
+  it "#to_f!" do
+    r = br(10, 3)
+    f = 10.to_f64 / 3.to_f64
+    r.to_f!.should be_close(f, 0.001)
+  end
+
   it "#to_f32" do
     r = br(10, 3)
     f = 10.to_f32 / 3.to_f32
     r.to_f32.should be_close(f, 0.001)
+  end
+
+  it "#to_f32!" do
+    r = br(10, 3)
+    f = 10.to_f32 / 3.to_f32
+    r.to_f32!.should be_close(f, 0.001)
   end
 
   it "#to_big_f" do
@@ -96,7 +114,7 @@ describe BigRational do
     e = a
     g = br(12, 3)
 
-    # sanity check things aren't swapped
+    # verify things aren't swapped
     [l, e, g].each { |o| (a <=> o).should eq(a.to_f <=> o.to_f) }
 
     test_comp(a, l, e, g)

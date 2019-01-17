@@ -11,7 +11,6 @@ module Crystal
   MALLOC_NAME        = "__crystal_malloc64"
   MALLOC_ATOMIC_NAME = "__crystal_malloc_atomic64"
   REALLOC_NAME       = "__crystal_realloc64"
-  PERSONALITY_NAME   = "__crystal_personality"
   GET_EXCEPTION_NAME = "__crystal_get_exception"
 
   class Program
@@ -97,6 +96,7 @@ module Crystal
     getter llvm_typer : LLVMTyper
     getter alloca_block : LLVM::BasicBlock
     getter entry_block : LLVM::BasicBlock
+    getter personality_name : String
     property last : LLVM::Value
 
     class LLVMVar
@@ -108,7 +108,7 @@ module Crystal
       # an "Reference**" llvm value and you need to load that value
       # to access it.
       # However, the "self" argument is not copied to a local variable:
-      # it's accessed from the arguments list, and it a "Reference*"
+      # it's accessed from the arguments list, and is a "Reference*"
       # llvm value, so in a way it's "already loaded".
       # This field is true if that's the case.
       getter already_loaded : Bool
@@ -129,6 +129,7 @@ module Crystal
     @argv : LLVM::Value
     @empty_md_list : LLVM::Value
     @rescue_block : LLVM::BasicBlock?
+    @catch_pad : LLVM::Value?
     @malloc_fun : LLVM::Function?
     @malloc_atomic_fun : LLVM::Function?
     @c_malloc_fun : LLVM::Function?
@@ -156,6 +157,15 @@ module Crystal
       ret_type = @llvm_typer.llvm_return_type(@main_ret_type)
       @main = @llvm_mod.functions.add(MAIN_NAME, [llvm_context.int32, llvm_context.void_pointer.pointer], ret_type)
 
+      if @program.has_flag? "windows"
+        @personality_name = "__CxxFrameHandler3"
+
+        personality_function = @llvm_mod.functions.add(@personality_name, [] of LLVM::Type, llvm_context.int32, true)
+        @main.personality_function = personality_function
+      else
+        @personality_name = "__crystal_personality"
+      end
+
       emit_main_def_debug_metadata(@main, "??") unless @debug.none?
 
       @context = Context.new @main, @program
@@ -179,9 +189,11 @@ module Crystal
       @in_lib = false
       @strings = {} of StringKey => LLVM::Value
       @symbols = {} of String => Int32
+      @symbols_by_index = [] of String
       @symbol_table_values = [] of LLVM::Value
       program.symbols.each_with_index do |sym, index|
         @symbols[sym] = index
+        @symbols_by_index << sym
         @symbol_table_values << build_string_constant(sym, sym)
       end
 
@@ -280,7 +292,7 @@ module Crystal
 
       def visit(node : FunDef)
         case node.name
-        when MALLOC_NAME, MALLOC_ATOMIC_NAME, REALLOC_NAME, RAISE_NAME, PERSONALITY_NAME, GET_EXCEPTION_NAME
+        when MALLOC_NAME, MALLOC_ATOMIC_NAME, REALLOC_NAME, RAISE_NAME, @codegen.personality_name, GET_EXCEPTION_NAME
           @codegen.accept node
         end
         false
@@ -342,7 +354,7 @@ module Crystal
       end
     end
 
-    def visit(node : Attribute)
+    def visit(node : Annotation)
       false
     end
 
@@ -429,9 +441,9 @@ module Crystal
         # TODO: implement String#to_u128 and use it
         @last = int128(node.value.to_u64)
       when :f32
-        @last = llvm_context.float.const_float(node.value)
+        @last = float32(node.value)
       when :f64
-        @last = llvm_context.double.const_double(node.value)
+        @last = float64(node.value)
       else
         node.raise "Bug: unhandled number kind: #{node.kind}"
       end
@@ -813,7 +825,9 @@ module Crystal
     end
 
     def visit(node : Not)
-      accept node.exp
+      request_value do
+        accept node.exp
+      end
       @last = codegen_cond node.exp.type.remove_indirection
       @last = not @last
       false
@@ -1516,6 +1530,7 @@ module Crystal
       old_fun = context.fun
       old_ensure_exception_handlers = @ensure_exception_handlers
       old_rescue_block = @rescue_block
+      old_catch_pad = @catch_pad
       old_entry_block = @entry_block
       old_alloca_block = @alloca_block
       old_needs_value = @needs_value
@@ -1526,6 +1541,7 @@ module Crystal
 
       @ensure_exception_handlers = nil
       @rescue_block = nil
+      @catch_pad = nil
 
       block_value = yield
 
@@ -1537,6 +1553,7 @@ module Crystal
       @llvm_typer = old_llvm_typer
       @ensure_exception_handlers = old_ensure_exception_handlers
       @rescue_block = old_rescue_block
+      @catch_pad = old_catch_pad
       @entry_block = old_entry_block
       @alloca_block = old_alloca_block
       @needs_value = old_needs_value
@@ -1829,9 +1846,8 @@ module Crystal
         with_cloned_context do
           # Instance var initializers must run with "self"
           # properly set up to the type being allocated
-          context.type = real_type
+          context.type = real_type.metaclass
           context.vars = LLVMVars.new
-          context.vars["self"] = LLVMVar.new(type_ptr, real_type)
           alloca_vars init.meta_vars
 
           accept init.value

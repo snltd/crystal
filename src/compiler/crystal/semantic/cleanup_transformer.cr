@@ -195,6 +195,10 @@ module Crystal
         unless const.value.type?
           node.raise "can't infer type of constant #{const} (maybe the constant refers to itself?)"
         end
+
+        if const.value.type.no_return?
+          node.raise "constant #{const} has illegal type NoReturn"
+        end
       end
 
       node.value = node.value.transform self
@@ -461,11 +465,7 @@ module Crystal
 
     def untyped_expression(node, msg = nil)
       ex_msg = String.build do |str|
-        str << "can't execute `"
-        str << node
-        str << "`"
-        str << " at "
-        str << node.location
+        str << "can't execute `" << node << "` at " << node.location
         if msg
           str << ": "
           str << msg
@@ -572,27 +572,6 @@ module Crystal
       if replacement = node.syntax_replacement
         replacement.transform(self)
       else
-        # If it's `nil?` we want to give an error if obj has a Pointer type
-        # inside it. This is because `Pointer#nil?` would previously mean
-        # "is it a null pointer?" but now it means "is it Nil?" which would
-        # always give false. Having this as a silent change will break a lot
-        # of code, so it's better to be more conservative for one release
-        # and let the user manually fix this (there might be valid `nil?`
-        # cases, for example if there is a union of Pointer and Nil).
-        if node.nil_check? && (obj_type = node.obj.type?)
-          if obj_type.pointer? || (obj_type.is_a?(UnionType) && obj_type.union_types.any?(&.pointer?))
-            node.raise <<-ERROR
-              use `null?` instead of `nil?` on pointer types.
-
-              The semantic of `nil?` changed in the last version of the language
-              to mean `is_a?(Nil)`. `Pointer#nil?` meant "is it a null pointer?"
-              so using `nil?` is probably not what you mean here. If it is,
-              you can use `is_a?(Nil)` instead and in the next version of
-              the language revert it to `nil?`.
-              ERROR
-          end
-        end
-
         transform_is_a_or_responds_to node, &.filter_by(node.const.type)
       end
     end
@@ -729,7 +708,44 @@ module Crystal
 
     def transform(node : TupleLiteral)
       super
+
+      unless node.elements.all? &.type?
+        return untyped_expression node
+      end
+
+      no_return_index = node.elements.index &.no_returns?
+      if no_return_index
+        exps = Expressions.new(node.elements[0, no_return_index + 1])
+        exps.bind_to(exps.expressions.last)
+        return exps
+      end
+
+      # `node.program` is assigned by `MainVisitor` usually, however
+      # it may not be assigned in some edge-case (e.g. this `node` is placed
+      # at not invoked block.). This assignment is for it.
+      node.program = @program
       node.update
+
+      node
+    end
+
+    def transform(node : NamedTupleLiteral)
+      super
+
+      unless node.entries.all? &.value.type?
+        return untyped_expression node
+      end
+
+      no_return_index = node.entries.index &.value.no_returns?
+      if no_return_index
+        exps = Expressions.new(node.entries[0, no_return_index + 1].map &.value)
+        exps.bind_to(exps.expressions.last)
+        return exps
+      end
+
+      node.program = @program
+      node.update
+
       node
     end
 
@@ -755,6 +771,10 @@ module Crystal
       end
 
       node
+    end
+
+    def transform(node : AssignWithRestriction)
+      transform(node.assign)
     end
 
     @false_literal : BoolLiteral?

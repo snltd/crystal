@@ -79,7 +79,12 @@ module YAML::Schema::Core
          .starts_with?("-0x")
       value = string.to_i64?(base: 16, prefix: true)
       return value || string
+    when .starts_with?("0."),
+         .starts_with?('.')
+      value = parse_float?(string)
+      return value || string
     when .starts_with?('0')
+      return 0_i64 if string.size == 1
       value = string.to_i64?(base: 8, prefix: true)
       return value || string
     when .starts_with?('-'),
@@ -330,6 +335,6 @@ module YAML::Schema::Core
     # Minimum length is that of YYYY-M-D
     return nil if string.size < 8
 
-    TimeParser.new(string).parse
+    Time::Format::YAML_DATE.parse?(string)
   end
 end

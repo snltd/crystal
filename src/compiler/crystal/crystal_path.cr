@@ -11,40 +11,18 @@ module Crystal
 
     @crystal_path : Array(String)
 
-    def initialize(path = CrystalPath.default_path, target_triple = Crystal::Config.default_target_triple)
+    def initialize(path = CrystalPath.default_path, codegen_target = Codegen::Target.new)
       @crystal_path = path.split(':').reject &.empty?
-      add_target_path(target_triple)
+      add_target_path(codegen_target)
     end
 
-    private def add_target_path(target_triple = Crystal::Config.default_target_triple)
-      triple = target_triple.split('-')
-      triple.delete(triple[1]) if triple.size == 4 # skip vendor
-
-      case triple[0]
-      when "i386", "i486", "i586"
-        triple[0] = "i686"
-      when .starts_with?("armv8")
-        triple[0] = "aarch64"
-      when .starts_with?("arm")
-        triple[0] = "arm"
-      end
-
-      target = if triple.any?(&.includes?("macosx")) || triple.any?(&.includes?("darwin"))
-                 {triple[0], "macosx", "darwin"}.join('-')
-               elsif triple.any?(&.includes?("freebsd"))
-                 {triple[0], triple[1], "freebsd"}.join('-')
-               elsif triple.any?(&.includes?("openbsd"))
-                 {triple[0], triple[1], "openbsd"}.join('-')
-               elsif triple.any?(&.includes?("solaris2.11"))
-                 {triple[0], triple[1], "solaris2.11"}.join('-')
-               else
-                 triple.join('-')
-               end
+    private def add_target_path(codegen_target)
+      target = "#{codegen_target.architecture}-#{codegen_target.os_name}"
 
       @crystal_path.each do |path|
-        _path = File.join(path, "lib_c", target)
-        if Dir.exists?(_path)
-          @crystal_path << _path unless @crystal_path.includes?(_path)
+        path = File.join(path, "lib_c", target)
+        if Dir.exists?(path)
+          @crystal_path << path unless @crystal_path.includes?(path)
           return
         end
       end
@@ -170,11 +148,21 @@ module Crystal
     end
 
     private def cant_find_file(filename, relative_to)
-      if relative_to
-        raise Error.new("can't find file '#{filename}' relative to '#{relative_to}'")
+      error = "can't find file '#{filename}'"
+
+      if filename.starts_with? '.'
+        error += " relative to '#{relative_to}'" if relative_to
       else
-        raise Error.new("can't find file '#{filename}'")
+        error = <<-NOTE
+          #{error}
+
+          If you're trying to require a shard:
+          - Did you remember to run `shards install`?
+          - Did you make sure you're running the compiler in the same directory as your shard.yml?
+          NOTE
       end
+
+      raise Error.new(error)
     end
   end
 end

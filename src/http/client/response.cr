@@ -1,5 +1,6 @@
 require "../client"
 require "../common"
+require "mime/media_type"
 
 class HTTP::Client::Response
   getter version : String
@@ -44,24 +45,22 @@ class HTTP::Client::Response
     HTTP.keep_alive?(self)
   end
 
-  def content_type
-    process_content_type_header.content_type
+  def content_type : String?
+    mime_type.try &.media_type
   end
 
-  def charset
-    process_content_type_header.charset
+  def charset : String?
+    mime_type.try &.["charset"]?
   end
 
-  @computed_content_type_header : ComputedContentTypeHeader?
-
-  private def process_content_type_header
-    @computed_content_type_header ||= begin
-      HTTP.content_type_and_charset(headers)
+  def mime_type : MIME::MediaType?
+    if content_type = headers["Content-Type"]?
+      MIME::MediaType.parse(content_type)
     end
   end
 
   def to_io(io)
-    io << @version << " " << @status_code << " " << @status_message << "\r\n"
+    io << @version << ' ' << @status_code << ' ' << @status_message << "\r\n"
     cookies = @cookies
     headers = cookies ? cookies.add_response_headers(@headers) : @headers
     HTTP.serialize_headers_and_body(io, headers, @body, @body_io, @version)
@@ -120,8 +119,17 @@ class HTTP::Client::Response
     return yield nil unless line
 
     pieces = line.split(3)
+    raise "Invalid HTTP response" if pieces.size < 2
+
     http_version = pieces[0]
-    status_code = pieces[1].to_i
+    raise "Unsupported HTTP version: #{http_version}" unless HTTP::SUPPORTED_VERSIONS.includes?(http_version)
+
+    status_code = pieces[1].to_i?
+
+    unless status_code && 100 <= status_code < 1000
+      raise "Invalid HTTP status code: #{pieces[1]}"
+    end
+
     status_message = pieces[2]? ? pieces[2].chomp : ""
 
     body_type = HTTP::BodyType::OnDemand

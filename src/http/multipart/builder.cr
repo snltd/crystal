@@ -1,10 +1,12 @@
+require "mime/media_type"
+
 module HTTP::Multipart
   # Builds a multipart MIME message.
   #
   # ### Example
   #
   # ```
-  # io = IO::Memory.new
+  # io = IO::Memory.new # This is a stub. Actually, any IO can be used.
   # multipart = HTTP::Multipart::Builder.new(io)
   # multipart.body_part HTTP::Headers{"Content-Type" => "text/plain"}, "hello!"
   # multipart.finish
@@ -25,17 +27,12 @@ module HTTP::Multipart
     # boundary parameter added.
     #
     # ```
+    # io = IO::Memory.new # This is a stub. Actually, any IO can be used.
     # builder = HTTP::Multipart::Builder.new(io, "a4VF")
     # builder.content_type("mixed") # => "multipart/mixed; boundary=\"a4VF\""
     # ```
     def content_type(subtype = "mixed")
-      String.build do |str|
-        str << "multipart/"
-        str << subtype
-        str << "; boundary=\""
-        HTTP.quote_string(@boundary, str)
-        str << '"'
-      end
+      MIME::MediaType.new("multipart/#{subtype}", {"boundary" => @boundary}).to_s
     end
 
     # Appends *string* to the preamble segment of the multipart message. Throws

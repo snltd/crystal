@@ -20,7 +20,7 @@ module Crystal
     CC = ENV["CC"]? || "cc"
     CL = "cl"
 
-    # A source to the compiler: it's filename and source code.
+    # A source to the compiler: its filename and source code.
     record Source,
       filename : String,
       code : String
@@ -83,12 +83,12 @@ module Crystal
     # one LLVM module is created for each type in a program.
     property? single_module = false
 
-    # Set to a `ProgressTracker` object which tracks compilation progress.
+    # A `ProgressTracker` object which tracks compilation progress.
     property progress_tracker = ProgressTracker.new
 
-    # Target triple to use in the compilation.
+    # Codegen target to use in the compilation.
     # If not set, asks LLVM the default one for the current machine.
-    property target_triple : String?
+    property codegen_target = Codegen::Target.new
 
     # If `true`, prints the link command line that is performed
     # to create the executable.
@@ -98,13 +98,21 @@ module Crystal
     # and can later be used to generate API docs.
     property? wants_doc = false
 
-    # Can be set to an array of strings to emit other files other
+    @[Flags]
+    enum EmitTarget
+      ASM
+      OBJ
+      LLVM_BC
+      LLVM_IR
+    end
+
+    # Can be set to a set of flags to emit other files other
     # than the executable file:
     # * asm: assembly files
     # * llvm-bc: LLVM bitcode
     # * llvm-ir: LLVM IR
     # * obj: object file
-    property emit : Array(String)?
+    property emit : EmitTarget?
 
     # Base filename to use for `emit` output.
     property emit_base_filename : String?
@@ -177,6 +185,7 @@ module Crystal
       program = Program.new
       program.filename = sources.first.filename
       program.cache_dir = CacheDir.instance.directory_for(sources)
+      program.codegen_target = codegen_target
       program.target_machine = target_machine
       program.flags << "release" if release?
       program.flags << "debug" unless debug.none?
@@ -223,7 +232,7 @@ module Crystal
 
     private def bc_flags_changed?(output_dir)
       bc_flags_changed = true
-      current_bc_flags = "#{@target_triple}|#{@mcpu}|#{@mattr}|#{@release}|#{@link_flags}"
+      current_bc_flags = "#{@codegen_target}|#{@mcpu}|#{@mattr}|#{@release}|#{@link_flags}"
       bc_flags_filename = "#{output_dir}/bc_flags"
       if File.file?(bc_flags_filename)
         previous_bc_flags = File.read(bc_flags_filename).strip
@@ -368,9 +377,9 @@ module Crystal
               input: Process::Redirect::Close, output: Process::Redirect::Inherit, error: Process::Redirect::Pipe) do |process|
               process.error.each_line(chomp: false) do |line|
                 hint_string = colorize("(this usually means you need to install the development package for lib\\1)").yellow.bold
-                line = line.gsub(/cannot find -l(\w+)/, "cannot find -l\\1 #{hint_string}")
-                line = line.gsub(/unable to find library -l(\w+)/, "unable to find library -l\\1 #{hint_string}")
-                line = line.gsub(/library not found for -l(\w+)/, "library not found for -l\\1 #{hint_string}")
+                line = line.gsub(/cannot find -l(\S+)\b/, "cannot find -l\\1 #{hint_string}")
+                line = line.gsub(/unable to find library -l(\S+)\b/, "unable to find library -l\\1 #{hint_string}")
+                line = line.gsub(/library not found for -l(\S+)\b/, "library not found for -l\\1 #{hint_string}")
                 STDERR << line
               end
             end
@@ -476,11 +485,8 @@ module Crystal
       end
     end
 
-    protected def target_machine
-      @target_machine ||= begin
-        triple = @target_triple || Crystal::Config.default_target_triple
-        TargetMachine.create(triple, @mcpu || "", @mattr || "", @release)
-      end
+    getter(target_machine : LLVM::TargetMachine) do
+      @codegen_target.to_target_machine(@mcpu || "", @mattr || "", @release)
     rescue ex : ArgumentError
       stderr.print colorize("Error: ").red.bold
       stderr.print "llc: "
@@ -617,7 +623,7 @@ module Crystal
         # old one. Generating an `.o` file is what takes most time.
         #
         # However, instead of directly generating the final `.o` file
-        # from the `.bc` file, we generate it to a termporary name (`.o.tmp`)
+        # from the `.bc` file, we generate it to a temporary name (`.o.tmp`)
         # and then we rename that file to `.o`. We do this because the compiler
         # could be interrupted while the `.o` file is being generated, leading
         # to a corrupted file that later would cause compilation issues.
@@ -667,21 +673,17 @@ module Crystal
         llvm_mod.print_to_file ll_name if compiler.dump_ll?
       end
 
-      def emit(values : Array, output_filename)
-        values.each do |value|
-          emit value, output_filename
-        end
-      end
-
-      def emit(value : String, output_filename)
-        case value
-        when "asm"
+      def emit(emit_target : EmitTarget, output_filename)
+        if emit_target.asm?
           compiler.target_machine.emit_asm_to_file llvm_mod, "#{output_filename}.s"
-        when "llvm-bc"
+        end
+        if emit_target.llvm_bc?
           FileUtils.cp(bc_name, "#{output_filename}.bc")
-        when "llvm-ir"
+        end
+        if emit_target.llvm_ir?
           llvm_mod.print_to_file "#{output_filename}.ll"
-        when "obj"
+        end
+        if emit_target.obj?
           FileUtils.cp(object_name, "#{output_filename}.o")
         end
       end

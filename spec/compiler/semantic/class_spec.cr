@@ -854,7 +854,7 @@ describe "Semantic: class" do
   it "doesn't crash on instance variable assigned a proc, and never instantiated (#923)" do
     assert_type(%(
       class Klass
-        def f(arg)
+        def self.f(arg)
         end
 
         @a  : Proc(String, Nil) = ->f(String)
@@ -1059,7 +1059,7 @@ describe "Semantic: class" do
 
       Foo.bar
       ),
-      "undefined method 'bar' for Foo:Class"
+      "undefined method 'bar' for Foo.class"
   end
 
   it "inherits self twice (#5495)" do
@@ -1074,5 +1074,21 @@ describe "Semantic: class" do
 
       { {{ Foo::Bar.superclass }}, {{ Foo::Baz.superclass }} }
     )) { tuple_of [types["Foo"].metaclass, types["Foo"].metaclass] }
+  end
+
+  it "errors if reading instance var of union type (#7187)" do
+    assert_error %(
+      class Foo
+        @x = 1
+      end
+
+      class Bar
+        @x = 1
+      end
+
+      z = Foo.new || Bar.new
+      z.@x
+      ),
+      "can't read instance variables of union types (@x of (Bar | Foo))"
   end
 end

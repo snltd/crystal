@@ -117,7 +117,7 @@ struct Enum
 
   # Returns a `String` representation of this enum member.
   # In the case of regular enums, this is just the name of the member.
-  # In the case of flag enums, it's the names joined by commas, or "None",
+  # In the case of flag enums, it's the names joined by vertical bars, or "None",
   # if the value is zero.
   #
   # If an enum's value doesn't match a member's value, the raw value
@@ -163,6 +163,11 @@ struct Enum
     # Returns the value of this enum member as a `{{type}}`
     def to_{{name.id}} : {{type}}
       value.to_{{name.id}}
+    end
+
+    # Returns the value of this enum member as a `{{type}}`
+    def to_{{name.id}}! : {{type}}
+      value.to_{{name.id}}!
     end
   {% end %}
 
@@ -235,6 +240,11 @@ struct Enum
   # ```
   def <=>(other : self)
     value <=> other.value
+  end
+
+  # :nodoc:
+  def ==(other)
+    false
   end
 
   # Returns `true` if this enum member's value includes *other*. This
@@ -385,7 +395,7 @@ struct Enum
   # Color.parse("BLUE")   # => Color::Blue
   # Color.parse("Yellow") # raises ArgumentError
   # ```
-  def self.parse(string) : self
+  def self.parse(string : String) : self
     parse?(string) || raise ArgumentError.new("Unknown enum #{self} value: #{string}")
   end
 
@@ -401,7 +411,7 @@ struct Enum
   # Color.parse?("BLUE")   # => Color::Blue
   # Color.parse?("Yellow") # => nil
   # ```
-  def self.parse?(string) : self?
+  def self.parse?(string : String) : self?
     {% begin %}
       case string.camelcase.downcase
       {% for member in @type.constants %}

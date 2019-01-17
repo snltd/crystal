@@ -10,11 +10,26 @@ module Crystal
     @type : Type?
 
     def type
-      @type || ::raise "BUG: `#{self}` at #{self.location} has no type"
+      type? || ::raise "BUG: `#{self}` at #{self.location} has no type"
     end
 
     def type?
-      @type
+      @type || @freeze_type
+    end
+
+    def type(*, with_literals = false)
+      type = self.type
+
+      if with_literals
+        case self
+        when NumberLiteral
+          return NumberLiteralType.new(type.program, self)
+        when SymbolLiteral
+          return SymbolLiteralType.new(type.program, self)
+        end
+      end
+
+      type
     end
 
     def set_type(type : Type)
@@ -459,7 +474,7 @@ module Crystal
                 if visitor
                   numeric_value = visitor.interpret_enum_value(value)
                   numeric_type = node_type.program.int?(numeric_value) || raise "BUG: expected integer type, not #{numeric_value.class}"
-                  type_var = NumberLiteral.new(numeric_value, numeric_type.kind)
+                  type_var = NumberLiteral.new(numeric_value.to_s, numeric_type.kind)
                   type_var.set_type_from(numeric_type, from)
                 else
                   node.raise "can't use constant #{node} (value = #{value}) as generic type argument, it must be a numeric constant"
@@ -504,7 +519,7 @@ module Crystal
       end
 
       if types.size > 300
-        raise "tuple too big: Tuple(#{types[0...10].join(",")}, ...)"
+        raise "tuple size cannot be greater than 300 (size is #{types.size})"
       end
 
       self.type = tuple_type
@@ -528,7 +543,7 @@ module Crystal
       end
 
       if entries.size > 300
-        raise "named tuple too big: #{named_tuple_type}"
+        raise "named tuple size cannot be greater than 300 (size is #{entries.size})"
       end
 
       self.type = named_tuple_type
@@ -541,6 +556,10 @@ module Crystal
     def update(from = nil)
       obj_type = obj.type?
       return unless obj_type
+
+      if obj_type.is_a?(UnionType)
+        raise "can't read instance variables of union types (#{name} of #{obj_type})"
+      end
 
       var = visitor.lookup_instance_var(self, obj_type)
       self.type = var.type

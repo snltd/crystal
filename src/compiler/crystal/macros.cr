@@ -34,12 +34,24 @@ module Crystal::Macros
   def flag?(name) : BoolLiteral
   end
 
-  # Prints an AST node at compile-time. Useful for debugging macros.
-  def puts(expression) : Nop
+  # Prints AST nodes at compile-time. Useful for debugging macros.
+  def puts(*expressions) : Nop
   end
 
   # Same as `puts`.
-  def p(expression) : Nop
+  def p(*expressions) : Nop
+  end
+
+  # Same as `puts`.
+  def pp(*expressions) : Nop
+  end
+
+  # Prints macro expressions together with their values at compile-time. Useful for debugging macros.
+  def p!(*expressions) : Nop
+  end
+
+  # Same as `p!`
+  def pp!(*expressions) : Nop
   end
 
   # Executes a system command and returns the output as a `MacroId`.
@@ -55,10 +67,30 @@ module Crystal::Macros
   def raise(message) : NoReturn
   end
 
+  # Reads a file and returns a `StringLiteral` with its contents.
+  #
+  # Gives a compile-time error if the file doesn't exist or if
+  # reading the file fails.
+  #
+  # To read a file relative to where the macro is defined, use:
+  #
+  # ```
+  # read_file("#{__DIR__}/some_file.txt")
+  # ```
+  #
+  # NOTE: Relative paths are resolved to the current working directory.
+  def read_file(filename) : StringLiteral
+  end
+
+  # Same as `read_file`, except that `nil` is returned on any I/O failure
+  # instead of issuing a compile-time failure.
+  def read_file?(filename) : StringLiteral | NilLiteral
+  end
+
   # Compiles and execute a Crystal program and returns its output
   # as a `MacroId`.
   #
-  # The file denote by *filename* must be a valid Crystal program.
+  # The file denoted by *filename* must be a valid Crystal program.
   # This macro invocation passes *args* to the program as regular
   # program arguments. The program must output a valid Crystal expression.
   # This output is the result of this macro invocation, as a `MacroId`.
@@ -94,25 +126,25 @@ module Crystal::Macros
   # shell commands at compile time, or other macro run programs). It's also strongly
   # discouraged to have a macro run program take a lot of time, because this will
   # slow down compilation times. Reading files is OK, opening an HTTP connection
-  # at compile-time will most likely result if very slow compilations.
+  # at compile-time will most likely result in very slow compilations.
   def run(filename, *args) : MacroId
   end
 
   # Skips the rest of the file from which it is executed.
   # Typical usage is to skip files that have platform specific code,
-  # without having to surround the most relevant code in `{%...%}` macro blocks.
+  # without having to surround the most relevant code in `{% if flag?(...) %} ... {% end %}` macro blocks.
   #
   # Example:
   #
   # ```
   # # sth_for_osx.cr
-  # {% skip unless flag?(:darwin) %}
+  # {% skip_file unless flag?(:darwin) %}
   #
   # # Class FooForMac will only be defined if we're compiling on OS X
   # class FooForMac
   # end
   # ```
-  def skip : Nop
+  def skip_file : Nop
   end
 
   # This is the base class of all AST nodes. This methods are
@@ -368,6 +400,10 @@ module Crystal::Macros
     def chomp : StringLiteral
     end
 
+    # Similar to `String#count`.
+    def count(other : CharLiteral) : NumberLiteral
+    end
+
     # Similar to `String#downcase`.
     def downcase : StringLiteral
     end
@@ -610,6 +646,18 @@ module Crystal::Macros
     def []=(index : NumberLiteral, value : ASTNode)
     end
 
+    # Similar to `Array#unshift`.
+    def unshift(value : ASTNode) : ArrayLiteral
+    end
+
+    # Similar to `Array#push`.
+    def push(value : ASTNode) : ArrayLiteral
+    end
+
+    # Similar to `Array#<<`.
+    def <<(value : ASTNode) : ArrayLiteral
+    end
+
     # Similar to `Array#+`.
     def +(other : ArrayLiteral) : ArrayLiteral
     end
@@ -724,12 +772,12 @@ module Crystal::Macros
     def double_splat(trailing_string : StringLiteral = nil) : MacroId
     end
 
-    # Similar to `NamedTuple#[]`
-    def [](key : ASTNode) : ASTNode
+    # Similar to `NamedTuple#[]` but returns `NilLiteral` if *key* is undefined.
+    def [](key : SymbolLiteral | StringLiteral | MacroId) : ASTNode
     end
 
     # Adds or replaces a key.
-    def []=(key : ASTNode) : ASTNode
+    def []=(key : SymbolLiteral | StringLiteral | MacroId) : ASTNode
     end
   end
 
@@ -785,6 +833,38 @@ module Crystal::Macros
 
     # Returns the type of this variable, if known, or `nil`.
     def type : TypeNode | NilLiteral
+    end
+
+    # Returns the default value of this variable.
+    # Note that if the variable doesn't have a default value,
+    # or the default value is `nil`, a `NilLiteral` will be
+    # returned. To distinguish between these cases, use
+    # `has_default_value?`.
+    def default_value : ASTNode
+    end
+
+    # Returns whether this variable has a default value
+    # (which can in turn be `nil`).
+    def has_default_value? : BoolLiteral
+    end
+
+    # Returns any `Annotation` with the given `type`
+    # attached to this variable.
+    def annotation(type : TypeNode) : Annotation
+    end
+  end
+
+  # An annotation on top of a type or variable.
+  class Annotation < ASTNode
+    # Returns the value of a positional argument,
+    # or NilLiteral if out of bounds.
+    def [](index : NumberLiteral) : ASTNode
+    end
+
+    # Returns the value of a named argument,
+    # or NilLiteral if the named argument isn't
+    # used in this attribute.
+    def [](name : SymbolLiteral | StringLiteral | MacroId) : ASTNode
     end
   end
 
@@ -1006,6 +1086,10 @@ module Crystal::Macros
     def block_arg : Arg | Nop
     end
 
+    # Returns `true` if this method can be called with a block, `false` otherwise.
+    def accepts_block? : BoolLiteral
+    end
+
     # Returns the return type of the method, if specified.
     def return_type : ASTNode | Nop
     end
@@ -1021,6 +1105,11 @@ module Crystal::Macros
 
     # Returns the visibility of this def: `:public`, `:protected` or `:private`.
     def visibility : SymbolLiteral
+    end
+
+    # Returns any `Annotation` with the given `type`
+    # attached to this method.
+    def annotation(type : TypeNode) : Annotation
     end
   end
 
@@ -1217,6 +1306,16 @@ module Crystal::Macros
 
     # Returns the named arguments of this instantiation, if any.
     def named_args : NamedTupleLiteral | NilLiteral
+    end
+
+    # Resolves this generic to a `TypeNode` if it denotes a type,
+    # or otherwise gives a compile-time error.
+    def resolve : ASTNode
+    end
+
+    # Resolves this path to a `TypeNode` if it denotes a type,
+    # or otherwise returns a `NilLiteral`.
+    def resolve? : ASTNode | NilLiteral
     end
   end
 
@@ -1544,6 +1643,10 @@ module Crystal::Macros
     def union? : BoolLiteral
     end
 
+    # Returns `true` if this type is nilable (if it has `Nil` amongst its types).
+    def nilable? : BoolLiteral
+    end
+
     # Returns the types comforming a union type, if this is a union type.
     # Gives a compile error otherwise.
     #
@@ -1613,6 +1716,11 @@ module Crystal::Macros
     # or `@[Packed]` (the name you pass to this method is `"Flags"` or `"Packed"`
     # in these cases).
     def has_attribute?(name : StringLiteral | SymbolLiteral) : BoolLiteral
+    end
+
+    # Returns any `Annotation` with the given `type`
+    # attached to this type.
+    def annotation(type : TypeNode) : Annotation
     end
 
     # Returns the number of elements in this tuple type or tuple metaclass type.

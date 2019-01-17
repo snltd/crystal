@@ -497,7 +497,7 @@ class String
     if info.negative
       {% if max_negative %}
         return yield if info.value > {{max_negative}}
-        -info.value.to_{{method}}
+        (~info.value &+ 1).unsafe_as(Int64).to_{{method}}
       {% else %}
         return yield
       {% end %}
@@ -582,7 +582,7 @@ class String
       value *= base
 
       old = value
-      value += digit
+      value &+= digit
       if value < old
         invalid = true
         break
@@ -1175,7 +1175,7 @@ class String
         outbuf_ptr = outbuf.to_unsafe
         outbytesleft = LibC::SizeT.new(outbuf.size)
         err = iconv.convert(pointerof(inbuf_ptr), pointerof(inbytesleft), pointerof(outbuf_ptr), pointerof(outbytesleft))
-        if err == -1
+        if err == Iconv::ERROR
           iconv.handle_invalid(pointerof(inbuf_ptr), pointerof(inbytesleft))
         end
         io.write(outbuf.to_slice[0, outbuf.size - outbytesleft])
@@ -1591,7 +1591,7 @@ class String
     return delete(from) if to.empty?
 
     if from.bytesize == 1
-      return gsub(from.unsafe_byte_at(0).unsafe_chr, to)
+      return gsub(from.unsafe_byte_at(0).unsafe_chr, to[0])
     end
 
     multi = nil
@@ -2033,7 +2033,7 @@ class String
           buffer[i] = byte
         end
       end
-      {bytesize, bytesize}
+      {bytesize, @length}
     end
   end
 
@@ -2531,7 +2531,7 @@ class String
       {% if i != 1 %}
         byte = head_pointer.value
       {% end %}
-      hash = hash * PRIME_RK + pointer.value - pow * byte
+      hash = hash &* PRIME_RK &+ pointer.value &- pow &* byte
       pointer += 1
       head_pointer += 1
     {% end %}
@@ -2579,9 +2579,9 @@ class String
     # calculate a rolling hash of search text (needle)
     search_hash = 0u32
     search.each_byte do |b|
-      search_hash = search_hash * PRIME_RK + b
+      search_hash = search_hash &* PRIME_RK &+ b
     end
-    pow = PRIME_RK ** search.bytesize
+    pow = PRIME_RK &** search.bytesize
 
     # Find start index with offset
     char_index = 0
@@ -2608,7 +2608,7 @@ class String
     hash_end_pointer = pointer + search.bytesize
     return if hash_end_pointer > end_pointer
     while pointer < hash_end_pointer
-      hash = hash * PRIME_RK + pointer.value
+      hash = hash &* PRIME_RK &+ pointer.value
       pointer += 1
     end
 
@@ -2695,9 +2695,9 @@ class String
     # calculate a rolling hash of search text (needle)
     search_hash = 0u32
     search.to_slice.reverse_each do |b|
-      search_hash = search_hash * PRIME_RK + b
+      search_hash = search_hash &* PRIME_RK &+ b
     end
-    pow = PRIME_RK ** search.bytesize
+    pow = PRIME_RK &** search.bytesize
 
     hash = 0u32
     char_index = size
@@ -2715,7 +2715,7 @@ class String
       byte = pointer.value
       char_index -= 1 if (byte & 0xC0) != 0x80
 
-      hash = hash * PRIME_RK + byte
+      hash = hash &* PRIME_RK &+ byte
     end
 
     while true
@@ -2733,7 +2733,7 @@ class String
       char_index -= 1 if (byte & 0xC0) != 0x80
 
       # update a rolling hash of this text (haystack)
-      hash = hash * PRIME_RK + byte - pow * tail_pointer.value
+      hash = hash &* PRIME_RK &+ byte &- pow &* tail_pointer.value
     end
   end
 
@@ -2869,9 +2869,9 @@ class String
     # calculate a rolling hash of search text (needle)
     search_hash = 0u32
     search.each_byte do |b|
-      search_hash = search_hash * PRIME_RK + b
+      search_hash = search_hash &* PRIME_RK &+ b
     end
-    pow = PRIME_RK ** search.bytesize
+    pow = PRIME_RK &** search.bytesize
 
     # calculate a rolling hash of this text (haystack)
     pointer = head_pointer = to_unsafe + offset
@@ -2880,7 +2880,7 @@ class String
     hash = 0u32
     return if hash_end_pointer > end_pointer
     while pointer < hash_end_pointer
-      hash = hash * PRIME_RK + pointer.value
+      hash = hash &* PRIME_RK &+ pointer.value
       pointer += 1
     end
 
@@ -2893,7 +2893,7 @@ class String
       return if pointer >= end_pointer
 
       # update a rolling hash of this text (haystack)
-      hash = hash * PRIME_RK + pointer.value - pow * head_pointer.value
+      hash = hash &* PRIME_RK &+ pointer.value &- pow &* head_pointer.value
       pointer += 1
       head_pointer += 1
       offset += 1
@@ -3491,7 +3491,7 @@ class String
         {@bytesize, @length}
       end
     else
-      # Iterate grpahemes to reverse the string,
+      # Iterate graphemes to reverse the string,
       # so combining characters are placed correctly
       String.new(bytesize) do |buffer|
         buffer += bytesize
@@ -3829,58 +3829,107 @@ class String
     Array.new(bytesize) { |i| to_unsafe[i] }
   end
 
-  def inspect(io)
+  # Pretty prints `self` into the given printer.
+  def pretty_print(pp : PrettyPrint) : Nil
+    printed_bytesize = 0
+    pp.group do
+      split('\n') do |part|
+        printed_bytesize += part.bytesize
+        if printed_bytesize != bytesize
+          printed_bytesize += 1 # == "\n".bytesize
+          pp.text("\"")
+          pp.text(part.inspect_unquoted)
+          pp.text("\\n\"")
+          break if printed_bytesize == bytesize
+          pp.text(" +")
+          pp.breakable
+        else
+          pp.text(part.inspect)
+        end
+      end
+    end
+  end
+
+  # Returns a representation of `self` using character escapes for special characters and wrapped in quotes.
+  #
+  # ```
+  # "\u{1f48e} - à la carte\n".inspect # => %("\u{1F48E} - à la carte\\n")
+  # ```
+  def inspect : String
+    super
+  end
+
+  # Appends `self` to the given `IO` object using character escapes for special characters and wrapped in double quotes.
+  def inspect(io : IO) : Nil
     dump_or_inspect(io) do |char, error|
       inspect_char(char, error, io)
     end
   end
 
-  def pretty_print(pp)
-    pp.text(inspect)
-  end
-
-  def inspect_unquoted
+  # Returns a representation of `self` using character escapes for special characters but not wrapped in quotes.
+  #
+  # ```
+  # "\u{1f48e} - à la carte\n".inspect_unquoted # => %(\u{1F48E} - à la carte\\n)
+  # ```
+  def inspect_unquoted : String
     String.build do |io|
       inspect_unquoted(io)
     end
   end
 
-  def inspect_unquoted(io)
+  # Appends `self` to the given `IO` object using character escapes for special characters but not wrapped in quotes.
+  def inspect_unquoted(io : IO) : Nil
     dump_or_inspect_unquoted(io) do |char, error|
       inspect_char(char, error, io)
     end
   end
 
-  def dump
+  # Returns a representation of `self` using character escapes for special characters
+  # and and non-ascii characters (unicode codepoints > 128), wrapped in quotes.
+  #
+  # ```
+  # "\u{1f48e} - à la carte\n".dump # => %("\\u{1F48E} - \\u00E0 la carte\\n")
+  # ```
+  def dump : String
     String.build do |io|
       dump io
     end
   end
 
-  def dump(io)
+  # Appends `self` to the given `IO` object using character escapes for special characters
+  # and and non-ascii characters (unicode codepoints > 128), wrapped in quotes.
+  def dump(io : IO) : Nil
     dump_or_inspect(io) do |char, error|
       dump_char(char, error, io)
     end
   end
 
-  def dump_unquoted
+  # Returns a representation of `self` using character escapes for special characters
+  # and and non-ascii characters (unicode codepoints > 128), but not wrapped in quotes.
+  #
+  # ```
+  # "\u{1f48e} - à la carte\n".dump_unquoted # => %(\\u{1F48E} - \\u00E0 la carte\\n)
+  # ```
+  def dump_unquoted : String
     String.build do |io|
       dump_unquoted(io)
     end
   end
 
-  def dump_unquoted(io)
+  # Appends `self` to the given `IO` object using character escapes for special characters
+  # and and non-ascii characters (unicode codepoints > 128), but not wrapped in quotes.
+  def dump_unquoted(io : IO) : Nil
     dump_or_inspect_unquoted(io) do |char, error|
       dump_char(char, error, io)
     end
   end
 
   private def dump_or_inspect(io)
-    io << "\""
+    io << '"'
     dump_or_inspect_unquoted(io) do |char, error|
       yield char, error
     end
-    io << "\""
+    io << '"'
   end
 
   private def dump_or_inspect_unquoted(io)
@@ -3890,6 +3939,7 @@ class String
       case current_char
       when '"'  then io << "\\\""
       when '\\' then io << "\\\\"
+      when '\a' then io << "\\a"
       when '\b' then io << "\\b"
       when '\e' then io << "\\e"
       when '\f' then io << "\\f"
@@ -3927,7 +3977,7 @@ class String
   end
 
   private def dump_char(char, error, io)
-    dump_or_inspect_char(char, error, io) do
+    dump_or_inspect_char char, error, io do
       char.ascii_control? || char.ord >= 0x80
     end
   end
@@ -3942,19 +3992,20 @@ class String
     end
   end
 
-  private def dump_hex(error, io)
+  private def dump_hex(char, io)
     io << "\\x"
-    io << "0" if error < 16
-    error.to_s(16, io, upcase: true)
+    io << '0' if char < 0x0F
+    char.to_s(16, io, upcase: true)
   end
 
   private def dump_unicode(char, io)
     io << "\\u"
-    io << "0" if char.ord < 4096
-    io << "0" if char.ord < 256
-    io << "0" if char.ord < 16
-    char.ord.to_s(16, io)
-    io << ""
+    io << '{' if char.ord > 0xFFFF
+    io << '0' if char.ord < 0x1000
+    io << '0' if char.ord < 0x0100
+    io << '0' if char.ord < 0x0010
+    char.ord.to_s(16, io, upcase: true)
+    io << '}' if char.ord > 0xFFFF
   end
 
   def starts_with?(str : String)
@@ -3968,6 +4019,10 @@ class String
     end
 
     false
+  end
+
+  def starts_with?(re : Regex)
+    !!($~ = re.match_at_byte_index(self, 0, Regex::Options::ANCHORED))
   end
 
   def ends_with?(str : String)
@@ -3992,10 +4047,17 @@ class String
     true
   end
 
+  def ends_with?(re : Regex)
+    !!($~ = /#{re}\z/.match(self))
+  end
+
   # Interpolates *other* into the string using `Kernel#sprintf`.
   #
   # ```
-  # "Party like it's %d!!!" % 1999 # => "Party like it's 1999!!!"
+  # "I have %d apples" % 5                                             # => "I have 5 apples"
+  # "%s, %s, %s, D" % ['A', 'B', 'C']                                  # => "A, B, C, D"
+  # "sum: %{one} + %{two} = %{three}" % {one: 1, two: 2, three: 1 + 2} # => "sum: 1 + 2 = 3"
+  # "I have %<apples>s apples" % {apples: 4}                           # => "I have 4 apples"
   # ```
   def %(other)
     sprintf self, other
@@ -4106,7 +4168,8 @@ class String
     return 4
   end
 
-  protected def size_known?
+  # :nodoc:
+  def size_known?
     @bytesize == 0 || @length > 0
   end
 
@@ -4182,8 +4245,11 @@ class String
   # Raises an `ArgumentError` if `self` has null bytes. Returns `self` otherwise.
   #
   # This method should sometimes be called before passing a `String` to a C function.
-  def check_no_null_byte
-    raise ArgumentError.new("String contains null byte") if byte_index(0)
+  def check_no_null_byte(name = nil)
+    if byte_index(0)
+      name = "`#{name}` " if name
+      raise ArgumentError.new("String #{name}contains null byte")
+    end
     self
   end
 
